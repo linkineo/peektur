@@ -1,4 +1,4 @@
-#include <CImg.h>
+#include <Magick++.h> 
 #include <json.hpp>
 #include <boost/filesystem.hpp>
 #include <vector>
@@ -39,44 +39,54 @@ bool list_directory(const boost::filesystem::path root_directory,path_listing &f
 
 }
 
-bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width)
+bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width)
 {
-  if(!boost::filesystem::is_directory(output_directory))
+   if(!boost::filesystem::is_directory(output_directory))
   {
     return false;
-  }  
+  }
 
-  int i = 0;
+   std::string filepath = entry.path().string();
+
+   Magick::Image image;
+
+   image.read(filepath); 
+   auto size = image.size();
+  
+   double w = size.width();
+   double h = size.height();
+   
+   double ratio = h/w;
+   int new_height = floor(new_width * ratio);
+
+   auto output_filepath = output_directory / entry.path().filename();
+   std::string output_name(output_filepath.string());
+
+   std::cout << "Resizing..." << output_name << std::endl;
+
+   image.filterType(Magick::FilterType::LanczosFilter);
+   image.resize(Magick::Geometry(new_width, new_height));
+  
+   image.write(output_name);
+   return true; 
+
+}
+
+bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width)
+{
 
   for(auto &entry : files)
   {
-   i++;
-   std::string filepath = entry.path().string();
-
-   cimg_library::CImg<uint8_t> img(filepath.c_str());
-   double w = img.width();
-   double h = img.height();
- 
-   double ratio = h/w;
-   int new_height = floor(new_width * ratio);
-  
-   auto output_filepath = output_directory / entry.path().filename();
-   std::string output_name(output_filepath.string());
-   
-   std::cout << "Resizing..." << output_name << std::endl;
-
-   img.resize(new_width,new_height,1,3,6);
-   img.save(output_name.c_str(),i,3);   
-    
+    resize_single_picture(entry, output_directory, new_width);
   }
-  
+
   return true;
 }
 
 bool parallel_resize(path_listing files, boost::filesystem::path output_directory, int new_width)
 {
 
-  size_t cores = std::thread::hardware_concurrency();
+  size_t cores = std::thread::hardware_concurrency()/2;
 
   int batch_size = files.size()/cores;
   int start = 0;
@@ -91,7 +101,6 @@ bool parallel_resize(path_listing files, boost::filesystem::path output_director
     stop += batch_size;
 
     thread_pool.push_back(std::thread(resize_pictures_in_directory,partitioned_files,output_directory,new_width));  
-    std::cout <<"NEWT" << std::endl;
   }
 
   for(auto &t : thread_pool)
@@ -112,8 +121,8 @@ path_listing files, subdirectories;
 extension_list allowed_extensions({".jpg",".jpeg",".JPG",".png",".PNG"});
 
 list_directory(boost::filesystem::path(argv[1]),files, subdirectories, allowed_extensions);
-//resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
-parallel_resize(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
+resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
+//parallel_resize(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
 
 return 0;
 }
