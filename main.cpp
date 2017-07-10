@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <math.h>
 #include <iostream>
-
+#include <thread>
 
 typedef std::vector<boost::filesystem::directory_entry> path_listing;
 
@@ -52,7 +52,7 @@ bool resize_pictures_in_directory(path_listing files, boost::filesystem::path ou
   {
    i++;
    std::string filepath = entry.path().string();
-   
+
    cimg_library::CImg<uint8_t> img(filepath.c_str());
    double w = img.width();
    double h = img.height();
@@ -73,6 +73,35 @@ bool resize_pictures_in_directory(path_listing files, boost::filesystem::path ou
   return true;
 }
 
+bool parallel_resize(path_listing files, boost::filesystem::path output_directory, int new_width)
+{
+
+  size_t cores = std::thread::hardware_concurrency();
+
+  int batch_size = files.size()/cores;
+  int start = 0;
+  int stop = batch_size;
+
+  std::vector<std::thread> thread_pool;
+
+  for(int p=0;p<cores;p++)
+  {
+    path_listing partitioned_files(files.begin()+start, files.begin()+stop);
+    start += batch_size;
+    stop += batch_size;
+
+    thread_pool.push_back(std::thread(resize_pictures_in_directory,partitioned_files,output_directory,new_width));  
+    std::cout <<"NEWT" << std::endl;
+  }
+
+  for(auto &t : thread_pool)
+  {
+    t.join(); 
+  }
+  return true;
+
+}
+
 int main(int argc, char** argv)
 {
 
@@ -83,7 +112,8 @@ path_listing files, subdirectories;
 extension_list allowed_extensions({".jpg",".jpeg",".JPG",".png",".PNG"});
 
 list_directory(boost::filesystem::path(argv[1]),files, subdirectories, allowed_extensions);
-resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
+//resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
+parallel_resize(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
 
 return 0;
 }
