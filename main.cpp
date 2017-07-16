@@ -1,15 +1,32 @@
 #include <Magick++.h> 
 #include <json.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/crc.hpp>
 #include <vector>
 #include <algorithm>
 #include <math.h>
 #include <iostream>
 #include <thread>
+#include <iterator>
 
 typedef std::vector<boost::filesystem::directory_entry> path_listing;
 
 typedef std::vector<boost::filesystem::path> extension_list;
+
+bool calculate_checksum(boost::filesystem::path filep, uint32_t &checksum)
+{
+
+
+  std::ifstream file(filep.string(),std::ios::in | std::ios::binary);
+  std::vector<uint8_t> raw((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
+ 
+  boost::crc_32_type result;
+  result.process_bytes(&raw[0],raw.size());
+  checksum = result.checksum();
+
+  return true;
+}
+
 
 bool list_directory(const boost::filesystem::path root_directory,path_listing &files, path_listing &subdirectories, extension_list extensions)
 {
@@ -39,7 +56,7 @@ bool list_directory(const boost::filesystem::path root_directory,path_listing &f
 
 }
 
-bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width)
+bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width, uint32_t checksum)
 {
    if(!boost::filesystem::is_directory(output_directory))
   {
@@ -59,7 +76,13 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
    double ratio = h/w;
    int new_height = floor(new_width * ratio);
 
-   auto output_filepath = output_directory / entry.path().filename();
+   std::stringstream s;
+   s << std::hex << checksum << entry.path().extension().string();
+   
+   std::string hex_name;
+   s >> hex_name; 
+ 
+   auto output_filepath = output_directory / hex_name;
    std::string output_name(output_filepath.string());
 
    std::cout << "Resizing..." << output_name << std::endl;
@@ -74,10 +97,12 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
 
 bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width)
 {
+  uint32_t checksum = 0;
 
   for(auto &entry : files)
   {
-    resize_single_picture(entry, output_directory, new_width);
+    calculate_checksum(entry.path(), checksum);
+    resize_single_picture(entry, output_directory, new_width, checksum);
   }
 
   return true;
