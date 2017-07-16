@@ -8,6 +8,7 @@
 #include <iostream>
 #include <thread>
 #include <iterator>
+#include <set>
 
 typedef std::vector<boost::filesystem::directory_entry> path_listing;
 
@@ -56,7 +57,7 @@ bool list_directory(const boost::filesystem::path root_directory,path_listing &f
 
 }
 
-bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width, uint32_t checksum)
+bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width, uint32_t checksum, std::set<std::string> &pictures_added)
 {
    if(!boost::filesystem::is_directory(output_directory))
   {
@@ -81,8 +82,8 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
    
    std::string hex_name;
    s >> hex_name; 
- 
-   auto output_filepath = output_directory / hex_name;
+
+   auto output_filepath = output_directory / std::to_string(new_width) / hex_name;
    std::string output_name(output_filepath.string());
 
    std::cout << "Resizing..." << output_name << std::endl;
@@ -91,24 +92,31 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
    image.resize(Magick::Geometry(new_width, new_height));
   
    image.write(output_name);
+
+   pictures_added.insert(hex_name);
    return true; 
 
 }
 
-bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width)
+bool create_direectories()
+{
+  return true;
+}
+
+bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width, std::set<std::string> &pictures_added)
 {
   uint32_t checksum = 0;
 
   for(auto &entry : files)
   {
     calculate_checksum(entry.path(), checksum);
-    resize_single_picture(entry, output_directory, new_width, checksum);
+    resize_single_picture(entry, output_directory, new_width, checksum, pictures_added);
   }
 
   return true;
 }
 
-bool parallel_resize(path_listing files, boost::filesystem::path output_directory, int new_width)
+bool parallel_resize(path_listing files, boost::filesystem::path output_directory, int new_width, std::set<std::string> &pictures_added)
 {
 
   size_t cores = std::thread::hardware_concurrency()/2;
@@ -125,7 +133,7 @@ bool parallel_resize(path_listing files, boost::filesystem::path output_director
     start += batch_size;
     stop += batch_size;
 
-    thread_pool.push_back(std::thread(resize_pictures_in_directory,partitioned_files,output_directory,new_width));  
+    thread_pool.push_back(std::thread(resize_pictures_in_directory,partitioned_files,output_directory,new_width, std::ref(pictures_added)));  
   }
 
   for(auto &t : thread_pool)
@@ -136,18 +144,63 @@ bool parallel_resize(path_listing files, boost::filesystem::path output_director
 
 }
 
+bool load_json(boost::filesystem::path path,nlohmann::json &json)
+{
+  path = path / "digest.json";
+  std::ifstream j(path.string());
+  if(j)
+  {
+    j >> json;
+    return true;
+  } 
+
+  return false;
+}
+
+bool save_json(boost::filesystem::path path, nlohmann::json json)
+{
+  path = path / "digest.json";
+  std::ofstream j(path.string());
+  if(j)
+  {
+  std::cout << "SAVING" << path.string() << std::endl;
+    j << json.dump(4); 
+    return true; 
+  }
+
+    return false;
+}
+
 int main(int argc, char** argv)
 {
 
-using json = nlohmann::json;
+nlohmann::json json;
 
+load_json(boost::filesystem::path(argv[2]),json);
 path_listing files, subdirectories;
 
 extension_list allowed_extensions({".jpg",".jpeg",".JPG",".png",".PNG"});
 
+std::set<std::string> pictures_added;
+std::vector<int> resolutions;
+
 list_directory(boost::filesystem::path(argv[1]),files, subdirectories, allowed_extensions);
-resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
-//parallel_resize(files,boost::filesystem::path(argv[2]),std::stoi(argv[3]));
+if(argc > 4)
+{
+  for(int p=4; p< argc;p++)
+  {
+    resolutions.push_back(std::stoi(argv[p]));
+    resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[p]), pictures_added);
+   // parallel_resize(files,boost::filesystem::path(argv[2]),std::stoi(argv[p]), pictures_added);;
+  }
+}
+
+
+
+json[argv[3]]["pictures"] = nlohmann::json(pictures_added);
+json[argv[3]]["widths"] = resolutions;
+
+save_json(boost::filesystem::path(argv[2]), json);
 
 return 0;
 }
