@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <math.h>
+#include <fstream>
 #include <iostream>
 #include <thread>
 #include <iterator>
@@ -16,8 +17,6 @@ typedef std::vector<boost::filesystem::path> extension_list;
 
 bool calculate_checksum(boost::filesystem::path filep, uint32_t &checksum)
 {
-
-
   std::ifstream file(filep.string(),std::ios::in | std::ios::binary);
   std::vector<uint8_t> raw((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
  
@@ -88,7 +87,7 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
 
    std::cout << "Resizing..." << output_name << std::endl;
 
-   image.filterType(Magick::FilterType::LanczosFilter);
+   //image.filterType(Magick::FilterType::LanczosFilter); // already default + not supported in earlier lib versions
    image.resize(Magick::Geometry(new_width, new_height));
   
    image.write(output_name);
