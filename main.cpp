@@ -10,19 +10,44 @@
 #include <thread>
 #include <iterator>
 #include <set>
+#include <string>
 
 typedef std::vector<boost::filesystem::directory_entry> path_listing;
-
 typedef std::vector<boost::filesystem::path> extension_list;
 
-bool calculate_checksum(boost::filesystem::path filep, uint32_t &checksum)
+struct image_meta{
+  std::string checksum;
+  std::string exif_date_original;
+};
+
+bool operator<(const image_meta &a,const image_meta &b)
+{
+  return a.checksum < b.checksum;
+}
+
+void to_json(nlohmann::json& j, const image_meta& im) {
+   j = nlohmann::json{{"id", im.checksum}, {"date", im.exif_date_original}};
+}
+
+void from_json(const nlohmann::json& j, image_meta& im) {
+        
+        im.checksum = j.at("id").get<std::string>();
+        im.exif_date_original= j.at("date").get<std::string>();
+}
+
+typedef std::set<image_meta> image_set;
+
+bool calculate_checksum(boost::filesystem::path filep, std::string &checksum)
 {
   std::ifstream file(filep.string(),std::ios::in | std::ios::binary);
   std::vector<uint8_t> raw((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
  
   boost::crc_32_type result;
   result.process_bytes(&raw[0],raw.size());
-  checksum = result.checksum();
+
+  std::stringstream s;
+  s << std::hex << result.checksum();
+  s >> checksum;
 
   return true;
 }
@@ -56,7 +81,7 @@ bool list_directory(const boost::filesystem::path root_directory,path_listing &f
 
 }
 
-bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width, uint32_t checksum, std::set<std::string> &pictures_added)
+bool resize_single_picture(boost::filesystem::directory_entry entry, boost::filesystem::path output_directory, int new_width, std::string checksum, image_set &pictures_added)
 {
    if(!boost::filesystem::is_directory(output_directory))
   {
@@ -76,14 +101,11 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
    double ratio = h/w;
    int new_height = floor(new_width * ratio);
 
-   std::stringstream s;
-   s << std::hex << checksum << entry.path().extension().string();
-   
-   std::string hex_name;
-   s >> hex_name; 
-
-   auto output_filepath = output_directory / std::to_string(new_width) / hex_name;
+   std::string file_with_extension = checksum + entry.path().extension().string();
+   auto output_filepath = output_directory / std::to_string(new_width) / file_with_extension;
    std::string output_name(output_filepath.string());
+
+  
 
    std::cout << "Resizing..." << output_name << std::endl;
 
@@ -92,9 +114,12 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
   
    image.write(output_name);
 
-   pictures_added.insert(hex_name);
+   image_meta imgi;
+   imgi.checksum = checksum;
+   imgi.exif_date_original = image.attribute("EXIF:DateTimeOriginal");
+   
+   pictures_added.insert(imgi);
    return true; 
-
 }
 
 bool create_direectories()
@@ -102,9 +127,9 @@ bool create_direectories()
   return true;
 }
 
-bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width, std::set<std::string> &pictures_added)
+bool resize_pictures_in_directory(path_listing files, boost::filesystem::path output_directory, int new_width, image_set &pictures_added)
 {
-  uint32_t checksum = 0;
+  std::string checksum = "";
 
   for(auto &entry : files)
   {
@@ -115,7 +140,7 @@ bool resize_pictures_in_directory(path_listing files, boost::filesystem::path ou
   return true;
 }
 
-bool parallel_resize(path_listing files, boost::filesystem::path output_directory, int new_width, std::set<std::string> &pictures_added)
+bool parallel_resize(path_listing files, boost::filesystem::path output_directory, int new_width, image_set &pictures_added)
 {
 
   size_t cores = std::thread::hardware_concurrency()/2;
@@ -175,20 +200,35 @@ int main(int argc, char** argv)
 
 nlohmann::json json;
 
-load_json(boost::filesystem::path(argv[2]),json);
+bool existing_json = load_json(boost::filesystem::path(argv[2]),json);
 path_listing files, subdirectories;
 
 extension_list allowed_extensions({".jpg",".jpeg",".JPG",".png",".PNG"});
 
-std::set<std::string> pictures_added;
-std::vector<int> resolutions;
+image_set pictures_added;
+std::set<int> resolutions;
+
+try
+{
+image_set pa = json[argv[3]]["pictures"];
+std::set<int> res = json[argv[3]]["widths"];
+
+pictures_added = pa;
+resolutions = res;
+}catch(std::exception &e)
+{
+}
+
 
 list_directory(boost::filesystem::path(argv[1]),files, subdirectories, allowed_extensions);
 if(argc > 4)
 {
   for(int p=4; p< argc;p++)
   {
-    resolutions.push_back(std::stoi(argv[p]));
+    boost::filesystem::path sub = boost::filesystem::path(argv[2]) / std::to_string(std::stoi(argv[p]));
+
+    boost::filesystem::create_directory(sub);
+    resolutions.insert(std::stoi(argv[p]));
     resize_pictures_in_directory(files,boost::filesystem::path(argv[2]),std::stoi(argv[p]), pictures_added);
    // parallel_resize(files,boost::filesystem::path(argv[2]),std::stoi(argv[p]), pictures_added);;
   }
