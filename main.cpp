@@ -15,6 +15,8 @@
 typedef std::vector<boost::filesystem::directory_entry> path_listing;
 typedef std::vector<boost::filesystem::path> extension_list;
 
+const size_t max_directory_depth = 10;
+
 struct image_meta{
   std::string checksum;
   std::string exif_date_original;
@@ -53,9 +55,9 @@ bool calculate_checksum(boost::filesystem::path filep, std::string &checksum)
 }
 
 
-bool list_directory(const boost::filesystem::path root_directory,path_listing &files, path_listing &subdirectories, extension_list extensions)
+bool list_directory(const boost::filesystem::path root_directory,path_listing &files, extension_list extensions, size_t recursions = 0)
 {
-
+  recursions++;
   bool is_directory = true;
 
   if(boost::filesystem::exists(root_directory) && boost::filesystem::is_directory(root_directory))   {
@@ -63,7 +65,10 @@ bool list_directory(const boost::filesystem::path root_directory,path_listing &f
       {
         if(boost::filesystem::is_directory(entry))
         {
-          subdirectories.push_back(entry);         
+          if(recursions <= max_directory_depth)
+          {
+            list_directory(entry.path(),files,extensions, recursions);
+          }
         }
 
         if(boost::filesystem::is_regular_file(entry) && std::find(extensions.begin(),extensions.end(),entry.path().extension()) != extensions.end())
@@ -201,7 +206,7 @@ int main(int argc, char** argv)
 nlohmann::json json;
 
 bool existing_json = load_json(boost::filesystem::path(argv[2]),json);
-path_listing files, subdirectories;
+path_listing files;
 
 extension_list allowed_extensions({".jpg",".jpeg",".JPG",".png",".PNG"});
 
@@ -220,7 +225,7 @@ resolutions = res;
 }
 
 
-list_directory(boost::filesystem::path(argv[1]),files, subdirectories, allowed_extensions);
+list_directory(boost::filesystem::path(argv[1]),files, allowed_extensions);
 if(argc > 4)
 {
   for(int p=4; p< argc;p++)
