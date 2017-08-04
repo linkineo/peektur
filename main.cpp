@@ -20,6 +20,7 @@ const size_t max_directory_depth = 10;
 struct image_meta{
   std::string checksum;
   std::string exif_date_original;
+  std::string type;
 };
 
 bool operator<(const image_meta &a,const image_meta &b)
@@ -28,13 +29,14 @@ bool operator<(const image_meta &a,const image_meta &b)
 }
 
 void to_json(nlohmann::json& j, const image_meta& im) {
-   j = nlohmann::json{{"id", im.checksum}, {"date", im.exif_date_original}};
+   j = nlohmann::json{{"id", im.checksum}, {"date", im.exif_date_original}, {"type", im.type}};
 }
 
 void from_json(const nlohmann::json& j, image_meta& im) {
         
         im.checksum = j.at("id").get<std::string>();
         im.exif_date_original= j.at("date").get<std::string>();
+        im.type= j.at("type").get<std::string>();
 }
 
 typedef std::set<image_meta> image_set;
@@ -122,7 +124,13 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
    image_meta imgi;
    imgi.checksum = checksum;
    imgi.exif_date_original = image.attribute("EXIF:DateTimeOriginal");
-   
+   if(entry.path().extension().string().find('.') != std::string::npos)
+   {
+     imgi.type = entry.path().extension().string().substr(1,entry.path().extension().string().length()); 
+   }else
+   {
+     imgi.type = "none";
+   }
    pictures_added.insert(imgi);
    return true; 
 }
