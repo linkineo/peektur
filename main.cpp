@@ -124,6 +124,15 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
    image_meta imgi;
    imgi.checksum = checksum;
    imgi.exif_date_original = image.attribute("EXIF:DateTimeOriginal");
+  
+   if(imgi.exif_date_original == "")
+   { 
+   auto t = boost::filesystem::last_write_time(entry.path());
+   std::ostringstream  write_time;
+   write_time  << std::put_time(std::localtime(&t),"%Y:%m:%d %H:%M:%S"); 
+   imgi.exif_date_original = write_time.str();
+   }
+
    if(entry.path().extension().string().find('.') != std::string::npos)
    {
      imgi.type = entry.path().extension().string().substr(1,entry.path().extension().string().length()); 
