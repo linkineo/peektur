@@ -16,6 +16,7 @@ typedef std::vector<boost::filesystem::directory_entry> path_listing;
 typedef std::vector<boost::filesystem::path> extension_list;
 
 const size_t max_directory_depth = 10;
+const unsigned int max_compression_quality = 75;
 
 struct image_meta{
   std::string checksum;
@@ -99,7 +100,8 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
 
    Magick::Image image;
 
-   image.read(filepath); 
+   image.read(filepath);
+   auto quality = image.quality(); 
    auto size = image.size();
   
    double w = size.width();
@@ -118,9 +120,16 @@ bool resize_single_picture(boost::filesystem::directory_entry entry, boost::file
 
    //image.filterType(Magick::FilterType::LanczosFilter); // already default + not supported in earlier lib versions
    image.resize(Magick::Geometry(new_width, new_height));
-  
-   image.write(output_name);
 
+   if(quality > max_compression_quality)
+   { 
+     image.quality(max_compression_quality); 
+   }else
+   {
+     image.quality(quality); 
+   }
+ 
+   image.write(output_name);
    image_meta imgi;
    imgi.checksum = checksum;
    imgi.exif_date_original = image.attribute("EXIF:DateTimeOriginal");
